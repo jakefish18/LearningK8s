@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fibonaciapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fibonaciapi
+  template:
+    metadata:
+      labels:
+        app: fibonaciapi
+    spec:
+      containers:
+        - name: fibonaciapi
+          image: jakefish30/fibonaciapi
+          ports:
+            - containerPort: 8080
