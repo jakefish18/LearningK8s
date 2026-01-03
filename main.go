@@ -1,12 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	ginprometheus "github.com/zsais/go-gin-prometheus"
 )
 
 type FibonacciResponse struct {
@@ -16,7 +17,7 @@ type FibonacciResponse struct {
 	Message      string `json:"message,omitempty"`
 }
 
-// Time: O(2^n) - extremely slow for n > 40
+// Time complexity: O(2^n) – intentionally slow
 func recursiveFibonacci(n int) uint64 {
 	if n <= 1 {
 		return uint64(n)
@@ -24,92 +25,51 @@ func recursiveFibonacci(n int) uint64 {
 	return recursiveFibonacci(n-1) + recursiveFibonacci(n-2)
 }
 
-func fibonacciHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	orderStr := r.PathValue("order_number")
+func fibonacciHandler(c *gin.Context) {
+	orderStr := c.Param("order_number")
 
 	order, err := strconv.Atoi(orderStr)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+	if err != nil || order < 0 || order > 93 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status_code": http.StatusBadRequest,
+			"message":     "order_number must be between 0 and 93",
+		})
 		return
 	}
 
-	if order < 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	if order > 93 {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	startTime := time.Now()
+	start := time.Now()
 	fibNum := recursiveFibonacci(order)
-	elapsed := time.Since(startTime)
+	elapsed := time.Since(start)
 
-	response := FibonacciResponse{
+	c.JSON(http.StatusOK, FibonacciResponse{
 		OrderNumber:  order,
 		FibonacciNum: fibNum,
 		StatusCode:   http.StatusOK,
-		Message:      fmt.Sprintf("Computed in %v", elapsed),
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-
-	log.Printf("Fibonacci(%d) = %d (computed in %v)", order, fibNum, elapsed)
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		log.Printf("Started %s %s", r.Method, r.URL.Path)
-
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(rw, r)
-
-		log.Printf("Completed %s %s - %d in %v",
-			r.Method, r.URL.Path, rw.statusCode, time.Since(start))
+		Message:      "Computed in " + elapsed.String(),
 	})
 }
 
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
 func main() {
-	// Create a new router
-	mux := http.NewServeMux()
+	gin.SetMode(gin.ReleaseMode)
 
-	// Register routes
-	mux.HandleFunc("GET /api/v1/fibonacci/{order_number}", fibonacciHandler)
+	router := gin.New()
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
 
-	// Apply middleware
-	handler := loggingMiddleware(mux)
+	// Register Prometheus metrics
+	p := ginprometheus.NewWithConfig(ginprometheus.Config{
+		Subsystem: "gin",
+	})
+	p.Use(router)
 
-	// Configure server
-	server := &http.Server{
-		Addr:         ":8080",
-		Handler:      handler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+	// API routes
+	api := router.Group("/api/v1")
+	{
+		api.GET("/fibonacci/:order_number", fibonacciHandler)
 	}
 
 	// Start server
-	log.Printf("Starting Fibonacci API server on port 8080")
-	log.Printf("Try these examples:")
-	log.Printf("  http://localhost:8080/api/v1/fibonacci/3")
-
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	if err := router.Run(":8080"); err != nil {
+		log.Fatal("run server")
 	}
 }
