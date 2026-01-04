@@ -5,4 +5,4 @@ scrape_configs:
   - job_name: "gin"
     metrics_path: /metrics
     static_configs:
-      - targets: [${FIBONACI_API_ADDRESS}]
+      - targets: [147.45.99.41:32000]

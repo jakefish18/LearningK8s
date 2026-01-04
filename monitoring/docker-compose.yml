@@ -7,8 +7,6 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheusdata:/prometheus
-    environment:
-      - FIBONACI_API_ADDRESS=147.45.99.41:32000
 
   grafana:
     image: grafana/grafana:latest
